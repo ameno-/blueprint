@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Blueprint</title>
+<link rel="stylesheet" href="blueprint.css"/>
+</head>
+<body>
+<div id="app"></div>
+<script src="blueprint.js"></script>
+<!-- blueprint data files register into window.BLUEPRINTS; add more here -->
+<script src="blueprints/acidbath.blueprint.js"></script>
+<script>
+  (function () {
+    const reg = window.BLUEPRINTS || {};
+    const name = new URLSearchParams(location.search).get("b");
+    const bp = reg[name] || reg[Object.keys(reg)[0]];
+    if (!bp) {
+      document.getElementById("app").textContent = "No blueprint registered.";
+      return;
+    }
+    document.title = "Blueprint — " + bp.title.toLowerCase();
+    Blueprint.render(document.getElementById("app"), bp);
+  })();
+</script>
+</body>
+</html>

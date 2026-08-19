@@ -1,0 +1,151 @@
+# Blueprint — parchment isometric work-maps
+
+A standalone, dependency-free way to draw a system as an isometric blueprint:
+what exists, what is being built, and what is only planned — in one picture.
+
+Open it:
+
+```bash
+git clone git@github.com:ameno-/blueprint.git && cd blueprint
+open index.html          # macOS — or double-click; no build step, no server
+```
+
+Deliberately **not** wired into any dashboard, docs, or ticket system. It is a
+plain file you can open, diff, and keep beside the work it describes.
+
+---
+
+## Generate a blueprint for a repo — step by step
+
+The fastest path is to point a coding agent at this section and say
+*"blueprint this repo"* — but every step below is mechanical enough to do by
+hand. Copy `blueprints/_template.blueprint.js` to start.
+
+1. **Inventory the structures.** List the repo's moving parts: entry points,
+   pipelines, stores, surfaces, external capabilities, test suites. Sources:
+   the README, the package manifest, top-level directories, the test scripts.
+   Target **8–25 nodes** — fewer and the picture is thin, more and it stops
+   being a map.
+2. **Group them.** 3–6 groups with short titles (`the shell`, `session
+   intelligence`, `the plans`). Groups become the legend sections. One group
+   should be the plans — work that is decided but not switched on.
+3. **Assign letter keys.** Every structure gets a short id (`H`, `T`, `K`,
+   `OP`). It is drawn on the block and used in edges, flow, and prose.
+   Keys are stable once published — treat renames as breaking.
+4. **Mark status truthfully.** `built` · `in-progress` · `planned` · `broken`.
+   This is the entire point of the exercise: the picture is a plan of record,
+   and it only works if the statuses are honest today, not aspirational.
+5. **Draw the wires.** An edge per real data/control flow, labeled with the
+   verb (`"usage events"`, `"feeds reducer"`). Planned flows get
+   `status: "planned"` and render dashed.
+6. **Choose ONE flow loop.** The `flow` array is the single story you would
+   trace for a newcomer, in order; the renderer loops it. Side connections
+   stay plain edges.
+7. **Hand-lay the grid.** Set `pos` per node like composing a drawing:
+   related things near each other, the loop readable left-to-right, plans
+   inside a dashed `region`. Conventions: **tall = measuring**, `slab` =
+   pass-through, `stack` = layered. There is no auto-layout on purpose.
+8. **Write the panels.** Per node: `summary` (one honest line for hover),
+   `does` (plain language), `built` (files, functions, wiring), and
+   `condition` when something is currently wrong. Use `==chips==` for
+   load-bearing terms.
+9. **Add `steps` where execution matters.** A node with a runtime story gets a
+   nested scene (`nodes`, `edges`, `flow`) — viewers drill in with
+   **→ go inside**. Steps are *execution order*, not a parts list.
+10. **Register and verify.** Add the file to `index.html` with a
+    `<script src="blueprints/<name>.blueprint.js">` tag, open
+    `index.html?b=<name>`, then: trace the whole loop with `resume the flow`,
+    click every node, and check each status against reality. If the trace
+    surprises you, the flow is wrong — fix the data, not the renderer.
+
+---
+
+## The picture
+
+- **Header strip** — repository/title, key metrics, an auto-computed status
+  tally, and the flow controls (`▶ resume the flow`, `trace one step`,
+  `reset view`).
+- **Left legend** — every structure, grouped, with its letter key and instance
+  count. Planned rows are dashed; in-progress rows carry a `◆`; broken rows are
+  struck through. Hover a row to flash its block; click to select.
+- **Center canvas** — isometric wireframe blocks on a parchment grid. Solid +
+  hatched = built; dashed ghost = planned; black diamond = in progress; crossed
+  top = broken. Blocks can be `box`, `slab`, or `stack` (a pile of plates —
+  use it for layered things). Wires run between blocks with a dot at the
+  source and an arrowhead into the target; planned wires are dashed.
+- **Right panel** — two tabs. **What it does** is plain language plus a
+  `condition` callout (what is currently wrong). **How it's built** is the
+  implementation record: prose, status/group/instances, and the connection
+  list. Nothing selected → the blueprint's own overview and reading guide.
+- **Footer** — the interaction grammar.
+
+Interactions: hover to read · click to select · `→` / `enter` goes inside a
+structure (its `steps`, as a scene of its own) · `←` / `esc` comes back out ·
+`↓↑` move selection · drag to pan · scroll to zoom · `trace one step` walks the
+flow loop node by node (selecting as it goes) · `resume the flow` runs it
+continuously until you touch anything.
+
+## Authoring reference
+
+Blueprints are plain JS data files that register themselves, so `file://`
+works with no server or fetch:
+
+```js
+// blueprints/mysystem.blueprint.js
+window.BLUEPRINTS = Object.assign(window.BLUEPRINTS || {}, {
+  mysystem: { /* blueprint object below */ },
+});
+```
+
+### Blueprint object
+
+| field | meaning |
+|---|---|
+| `title`, `subtitle` | header strip identity |
+| `headLabel` | label over the title cell (default `repository`) |
+| `legendTitle` | legend heading (default `the system`) |
+| `heading`, `tagline` | right-panel overview title/subtitle |
+| `description` | overview prose (what this is) |
+| `built` | overview construction notes (how-it's-built tab) |
+| `metrics` | `[{label, value}]` header cells; `structures` and `status` are auto-added |
+| `groups` | `[{id, title}]` — legend sections, in order |
+| `regions` | `[{label, rect:[x,y,w,d]}]` — dashed floor regions (e.g. "plans") |
+| `nodes` | structures (below) |
+| `edges` | `[{from, to, label?, status?}]` — wires between node ids |
+| `flow` | `[nodeId, …]` — the loop the trace buttons walk (wraps around) |
+
+### Node
+
+| field | default | meaning |
+|---|---|---|
+| `id` | — | short letter key, drawn on the block (`"K"`) |
+| `label` | — | legend/panel name |
+| `group` | `misc` | one of `groups[].id` |
+| `pos` | — | `[x, y]` on the grid, **hand-laid** (like the drawing it imitates) |
+| `size` | `[1.6,1.6]` | footprint `[w, d]` in grid units |
+| `height` | `1.6` | extrusion height (`box` only) |
+| `shape` | `box` | `box` · `slab` (flat) · `stack` (plates, see `plates`) |
+| `status` | `built` | `built` · `in-progress` · `planned` · `broken` |
+| `count` | `1` | instance count in legend/status tally |
+| `summary` | — | hover tooltip one-liner |
+| `does` | — | what-it-does tab prose |
+| `built` | — | how-it's-built tab prose |
+| `condition` | — | what is currently wrong (renders as a callout) |
+| `steps` | — | nested scene `{nodes, edges, flow, …}` — enables **go inside** |
+
+Prose fields support `**bold**` and `==highlight chips==`. Blank lines split
+paragraphs.
+
+## Files
+
+```
+index.html                        shell (script-tag loading, ?b=name picker)
+blueprint.css                     parchment theme
+blueprint.js                      renderer + interactions (no dependencies)
+blueprints/
+  acidbath.blueprint.js           worked example: a real package's work + plans
+  _template.blueprint.js          starting point for your own
+```
+
+Known limits: single-elbow edge routing, hand-laid positions, no tests, no
+mobile affordances.
