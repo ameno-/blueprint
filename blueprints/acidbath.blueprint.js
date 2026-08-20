@@ -223,6 +223,7 @@ window.BLUEPRINTS = Object.assign(window.BLUEPRINTS || {}, {
     edges: [
       { from: "H", to: "W", label: "session start" },
       { from: "W", to: "E", label: "dismisses into" },
+      { from: "E", to: "C", label: "context state" },
       { from: "E", to: "R", label: "lifecycle events" },
       { from: "R", to: "T", label: "tool work" },
       { from: "T", to: "K", label: "usage events" },

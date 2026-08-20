@@ -1,0 +1,14 @@
+{
+  "name": "blueprint-workmaps",
+  "version": "0.1.0",
+  "description": "Parchment isometric work-maps: draw a system's current work and plans as an interactive blueprint.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "blueprint": "./cli.mjs"
+  },
+  "scripts": {
+    "demo": "node cli.mjs demo --no-browser",
+    "check": "node cli.mjs check blueprints/*.blueprint.js"
+  }
+}

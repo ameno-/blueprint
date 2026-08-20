@@ -404,6 +404,7 @@ html, body {
 
 .bp-wire { fill: none; stroke: var(--ink); stroke-width: 1.2; }
 .bp-wire[data-status="planned"] { stroke-dasharray: 6 5; stroke-opacity: 0.6; }
+.bp-wire[data-status="broken"] { stroke-dasharray: 2.5 3; }
 .bp-wire-label { fill: var(--ink-soft); }
 
 .bp-pulse-ring {

@@ -13,6 +13,27 @@ open index.html          # macOS — or double-click; no build step, no server
 Deliberately **not** wired into any dashboard, docs, or ticket system. It is a
 plain file you can open, diff, and keep beside the work it describes.
 
+## CLI
+
+Zero dependencies, node ≥ 18. Install globally from the repo:
+
+```bash
+npm i -g git+https://github.com/ameno-/blueprint.git   # or: npm link  from a clone
+```
+
+```
+blueprint check <file...>                        validate blueprint data
+blueprint open <file...> [--port N] [--no-browser]   serve + open in browser
+blueprint init <name> [--dir .]                  scaffold from the template
+blueprint demo                                   serve the acidbath example
+```
+
+`check` fails CI-style (exit 1) on unknown edge/flow references, duplicate
+ids, undeclared groups, bad statuses, and malformed geometry; it warns on
+isolated nodes, footprint overlaps, missing prose, and `broken` nodes with no
+`condition`. `open` serves any blueprint file from anywhere — no copying into
+the viewer directory. Deep links: `?b=<name>&select=<NODEID>`.
+
 ---
 
 ## Generate a blueprint for a repo — step by step
@@ -57,6 +78,27 @@ hand. Copy `blueprints/_template.blueprint.js` to start.
     `index.html?b=<name>`, then: trace the whole loop with `resume the flow`,
     click every node, and check each status against reality. If the trace
     surprises you, the flow is wrong — fix the data, not the renderer.
+
+---
+
+## Using it during review and bug triage
+
+The same picture doubles as a review instrument. To walk a reviewer — or a
+future you — through a bug:
+
+1. **Set the failing structure to `status: "broken"`** and write its
+   `condition` as the bug story: symptom, mechanism, evidence (failing test,
+   log line, Linear issue).
+2. **Mark the broken wire `status: "broken"`** — it renders with a × cut —
+   where the contract between two structures actually fails.
+3. **Point `flow` at the failing path** so `trace one step` walks the bug
+   end-to-end, selecting each structure as the pulse arrives.
+4. **Add the fix as `planned`** nodes/edges, with `steps` for the execution
+   plan — reviewers drill in with **→ go inside**.
+5. **Share a focused link**: `blueprint open` the file and send
+   `http://localhost:4319/?b=<name>&select=<NODEID>`.
+6. **When the fix lands, flip statuses back.** The condition text lives in git
+   history — not on the diagram.
 
 ---
 
@@ -113,6 +155,7 @@ window.BLUEPRINTS = Object.assign(window.BLUEPRINTS || {}, {
 | `nodes` | structures (below) |
 | `edges` | `[{from, to, label?, status?}]` — wires between node ids |
 | `flow` | `[nodeId, …]` — the loop the trace buttons walk (wraps around) |
+| `focus` | node id selected on load (URL `?select=` overrides) |
 
 ### Node
 
@@ -142,6 +185,7 @@ paragraphs.
 index.html                        shell (script-tag loading, ?b=name picker)
 blueprint.css                     parchment theme
 blueprint.js                      renderer + interactions (no dependencies)
+cli.mjs                           blueprint check / open / init / demo
 blueprints/
   acidbath.blueprint.js           worked example: a real package's work + plans
   _template.blueprint.js          starting point for your own

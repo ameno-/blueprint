@@ -293,6 +293,11 @@
         const g = svg("g", {}, edgeG);
         svg("polyline", { points: pts(p), class: "bp-wire", "data-status": e.status }, g);
         svg("circle", { cx: p[0][0], cy: p[0][1], r: 2.6, fill: "#2b2517" }, g);
+        if (e.status === "broken") {
+          const m = p[1];
+          svg("line", { x1: m[0] - 4.5, y1: m[1] - 4.5, x2: m[0] + 4.5, y2: m[1] + 4.5, stroke: "#2b2517", "stroke-width": 1.8 }, g);
+          svg("line", { x1: m[0] - 4.5, y1: m[1] + 4.5, x2: m[0] + 4.5, y2: m[1] - 4.5, stroke: "#2b2517", "stroke-width": 1.8 }, g);
+        }
         // arrowhead into target
         const [q1, q2] = [p[p.length - 2], p[p.length - 1]];
         const ang = Math.atan2(q2[1] - q1[1], q2[0] - q1[0]);
@@ -757,6 +762,8 @@
     const rootScene = prepScene(Object.assign({}, bp, { stepScene: false }));
     state.sceneStack.push({ scene: rootScene, name: bp.title });
     renderScene();
+    const wanted = new URLSearchParams(location.search).get("select") || bp.focus;
+    if (wanted && rootScene._nodes[wanted]) select(wanted);
     window.addEventListener("resize", () => { /* keep view; user can reset */ });
   }
 

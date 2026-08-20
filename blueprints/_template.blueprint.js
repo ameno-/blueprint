@@ -81,6 +81,7 @@ window.BLUEPRINTS = Object.assign(window.BLUEPRINTS || {}, {
       { from: "B", to: "C", label: "writes" },
       { from: "C", to: "D" },
       { from: "D", to: "A", label: "returns", status: "planned" },
+      { from: "E", to: "C", label: "extends", status: "planned" },
     ],
 
     flow: ["A", "B", "C", "D"],
