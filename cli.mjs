@@ -172,6 +172,20 @@ async function loadConfig(configPath) {
   }
 }
 
+async function listPacks(opts) {
+  const { file, config } = await loadConfig(opts.config);
+  const packs = config.packs || {};
+  const names = Object.keys(packs);
+  if (!names.length) {
+    console.log(`no packs declared in ${file}`);
+    return;
+  }
+  for (const name of names) {
+    const files = packs[name].files || [];
+    console.log(`${name}\t${files.join(", ")}`);
+  }
+}
+
 // micro-glob: supports * (within a segment) and ** (any depth)
 async function resolveGlob(pattern, cwd) {
   if (!pattern.includes("*")) return [pattern];
@@ -229,7 +243,8 @@ async function mapCmd(packNames, opts) {
     if (!pack) throw new Error(`unknown pack "${name}" in ${file}`);
     const { scene, errors, warnings, files } = await scanPack(pack, cwd);
     autoLayout(scene.nodes, scene.edges);
-    for (const w of warnings) console.log(`  ⚠ ${w}`);
+    const warn = opts.stdout ? console.error : console.log;
+    for (const w of warnings) warn(`  ⚠ ${w}`);
     if (errors.length) {
       for (const e of errors) console.error(`  ✗ ${e}`);
       throw new Error(`pack "${name}" has ${errors.length} scan errors`);
@@ -240,7 +255,7 @@ async function mapCmd(packNames, opts) {
       for (const e of verrors) console.error(`  ✗ ${e}`);
       throw new Error(`pack "${name}" produced an invalid scene`);
     }
-    for (const w of vwarnings) console.log(`  ⚠ ${w}`);
+    for (const w of vwarnings) warn(`  ⚠ ${w}`);
     const text = serializeScene(name, scene, GEN_BANNER);
     if (opts.stdout) {
       process.stdout.write(text);
@@ -276,8 +291,11 @@ async function diffCmd(args, opts) {
     if (!opts.pack || !pack) throw new Error(`diff --ref needs --pack <name> (packs in ${file}: ${Object.keys(config.packs || {}).join(", ") || "none"})`);
     const repoRoot = execFileSync("git", ["rev-parse", "--show-toplevel"], { cwd, encoding: "utf8" }).trim();
     const readAtRef = gitReader(opts.ref, repoRoot);
-    const beforeScan = await scanPack(pack, repoRoot, async (f) => readAtRef(f)).catch(() => ({ scene: { nodes: [], edges: [] } }));
+    const beforeScan = await scanPack(pack, repoRoot, async (f) => readAtRef(f));
     const afterScan = await scanPack(pack, repoRoot);
+    for (const [label, result] of [[opts.ref, beforeScan], ["worktree", afterScan]]) {
+      if (result.errors.length) throw new Error(`${label} pack has ${result.errors.length} scan errors: ${result.errors.join("; ")}`);
+    }
     before = beforeScan.scene; after = afterScan.scene; name = opts.pack;
     if (!before.nodes.length && !after.nodes.length) throw new Error(`pack "${opts.pack}" has no directives at ${opts.ref} or in the worktree`);
   } else {
@@ -331,6 +349,7 @@ const HELP = `blueprint — parchment isometric work-maps
   blueprint open <file...> [--port N] [--no-browser] serve + open in browser
   blueprint init <name> [--dir .]                    scaffold from the template
   blueprint demo [--port N]                          serve the acidbath example
+  blueprint packs [--config p]                         list declared packs
   blueprint map <pack|--all> [--config p] [--stdout] scan bp: directives -> data
   blueprint diff <a> <b> [--out f]                   diff two blueprint files
   blueprint diff --ref <gitref> --pack <name>        diff a pack across a ref
@@ -343,6 +362,7 @@ async function main() {
   if (cmd === "open" && args.length) return openCmd(args, opts);
   if (cmd === "init" && args.length) return init(args[0], opts.dir);
   if (cmd === "demo") return openCmd([path.join(ROOT, "blueprints", "acidbath.blueprint.js")], opts);
+  if (cmd === "packs") return listPacks(opts);
   if (cmd === "map" && (args.length || opts.all)) return mapCmd(args, opts);
   if (cmd === "diff") return diffCmd(args, opts);
   process.stdout.write(HELP);

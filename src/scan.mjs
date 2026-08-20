@@ -59,6 +59,39 @@ function inComment(spans, lineIdx, colIdx) {
   return !!regions && regions.some(([s, e]) => colIdx >= s && colIdx < e);
 }
 
+// Preserve code characters and newlines; mask comments and quoted text so
+// entity binding cannot mistake documentation or fixture strings for code.
+function codeOnly(text) {
+  let state = "code", quote = null, out = "";
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i], next = text[i + 1];
+    if (state === "line") {
+      if (c === "\n") { out += c; state = "code"; }
+      else out += " ";
+      continue;
+    }
+    if (state === "block") {
+      if (c === "*" && next === "/") { out += "  "; i++; state = "code"; }
+      else out += c === "\n" ? "\n" : " ";
+      continue;
+    }
+    if (state === "string" || state === "template") {
+      if (c === "\\") {
+        out += " ";
+        if (next === "\n") { out += "\n"; i++; }
+        else if (next != null) { out += " "; i++; }
+      } else if (c === quote) { out += " "; state = "code"; }
+      else out += c === "\n" ? "\n" : " ";
+      continue;
+    }
+    if (c === "/" && next === "/") { out += "  "; i++; state = "line"; continue; }
+    if (c === "/" && next === "*") { out += "  "; i++; state = "block"; continue; }
+    if (c === "'" || c === '"' || c === "`") { out += " "; quote = c; state = c === "`" ? "template" : "string"; continue; }
+    out += c;
+  }
+  return out;
+}
+
 const ENTITY_PATTERNS = [
   { kind: "class", re: /(?:export\s+)?(?:default\s+)?(?:abstract\s+)?class\s+([A-Za-z0-9_$]+)/ },
   { kind: "function", re: /(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*\*?\s*([A-Za-z0-9_$]+)/ },
@@ -68,10 +101,10 @@ const ENTITY_PATTERNS = [
 
 const KIND_SHAPE = { module: "stack", class: "box", component: "box", function: "slab", type: "slab" };
 
-function findEntity(lines, fromIdx, maxAhead = 8) {
+function findEntity(lines, fromIdx, maxAhead = 8, stopLines = new Set()) {
   for (let i = fromIdx; i < Math.min(lines.length, fromIdx + maxAhead); i++) {
+    if (i !== fromIdx && stopLines.has(i)) break;
     const line = lines[i];
-    if (/bp:node/.test(line) && i !== fromIdx) break; // hit the next directive
     for (const { kind, re } of ENTITY_PATTERNS) {
       const m = line.match(re);
       if (m) {
@@ -103,7 +136,14 @@ function humanize(sym) {
 export function scanSource(file, text) {
   const out = { nodes: [], edges: [], flow: [], groups: [], errors: [], warnings: [] };
   const lines = text.split("\n");
+  const sourceLines = codeOnly(text).split("\n");
   const spans = commentSpans(text);
+  const nodeDirectiveLines = new Set();
+  lines.forEach((line, lineIdx) => {
+    for (const candidate of line.matchAll(/bp:node/g)) {
+      if (inComment(spans, lineIdx, candidate.index)) nodeDirectiveLines.add(lineIdx);
+    }
+  });
   let lastNode = null;
 
   lines.forEach((line, idx) => {
@@ -122,7 +162,7 @@ export function scanSource(file, text) {
       if (!idMatch) { out.errors.push(`${file}:${idx + 1}: bp:node missing ID`); return; }
       const [, id, tail] = idMatch;
       const { label, attrs } = parseAttrs(tail);
-      const entity = findEntity(lines, idx + 1);
+      const entity = findEntity(sourceLines, idx, 8, nodeDirectiveLines);
       const node = {
         id,
         label: label || (entity ? humanize(entity.symbol) : id),

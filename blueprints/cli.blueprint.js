@@ -9,7 +9,7 @@ window.BLUEPRINTS = Object.assign(window.BLUEPRINTS || {}, {
       "group": "the-cli",
       "shape": "stack",
       "does": "Parses argv and dispatches: ==check==, ==open==, ==init==, ==demo==, ==map==, ==diff==.",
-      "built": "cli.mjs — zero-dep node ESM entry; serves the viewer over http.\n\ncli.mjs:360 — module",
+      "built": "cli.mjs — zero-dep node ESM entry; serves the viewer over http.\n\ncli.mjs:380 — module",
       "summary": "",
       "condition": "",
       "pos": [
@@ -24,7 +24,7 @@ window.BLUEPRINTS = Object.assign(window.BLUEPRINTS || {}, {
       "status": "planned",
       "shape": "stack",
       "does": "Re-map packs when sources change; keep the picture live during a session.",
-      "built": "cli.mjs:368 — module",
+      "built": "cli.mjs:388 — module",
       "summary": "",
       "condition": "Not started; needs a debounce and a served-page reload channel.",
       "pos": [
@@ -39,7 +39,7 @@ window.BLUEPRINTS = Object.assign(window.BLUEPRINTS || {}, {
       "status": "planned",
       "shape": "stack",
       "does": "Export the scene as SVG/PNG for Linear comments and docs.",
-      "built": "cli.mjs:372 — module",
+      "built": "cli.mjs:392 — module",
       "summary": "",
       "condition": "",
       "pos": [
@@ -81,7 +81,7 @@ window.BLUEPRINTS = Object.assign(window.BLUEPRINTS || {}, {
       "group": "engines",
       "shape": "stack",
       "does": "Reads ==bp:== comments and assembles scenes: nodes with inferred kind and shape, edges, flow, groups.",
-      "built": "src/scan.mjs — regex entity detection (class/function/const/type); PascalCase ⇒ component.\n\nsrc/scan.mjs:224 — module",
+      "built": "src/scan.mjs — regex entity detection (class/function/const/type); PascalCase ⇒ component.\n\nsrc/scan.mjs:264 — module",
       "summary": "",
       "condition": "",
       "pos": [
@@ -109,7 +109,7 @@ window.BLUEPRINTS = Object.assign(window.BLUEPRINTS || {}, {
       "group": "the-viewer",
       "shape": "box",
       "does": "Renders scenes onto the parchment board: legend, tabs, trace, drill-down, ==delta vocabulary==, changed-only filter.",
-      "built": "blueprint.js + blueprint.css — dependency-free SVG, no build step.\n\nblueprint.js:809 — module",
+      "built": "blueprint.js + blueprint.css — dependency-free SVG, no build step.\n\nblueprint.js:815 — module",
       "summary": "",
       "condition": "",
       "pos": [
@@ -123,7 +123,7 @@ window.BLUEPRINTS = Object.assign(window.BLUEPRINTS || {}, {
       "group": "guards",
       "shape": "box",
       "does": "Nine assertions across scanner, layout, diff, and validation.",
-      "built": "tests/run.mjs — node:assert, run by npm test.\n\ntests/run.mjs:184 — module",
+      "built": "tests/run.mjs — node:assert, run by npm test.\n\ntests/run.mjs:198 — module",
       "summary": "",
       "condition": "",
       "pos": [

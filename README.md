@@ -26,6 +26,7 @@ blueprint check <file...>                          validate blueprint data
 blueprint open <file...> [--port N] [--no-browser]   serve + open in browser
 blueprint init <name> [--dir .]                    scaffold from the template
 blueprint demo                                     serve the acidbath example
+blueprint packs [--config p]                       list declared packs
 blueprint map <pack|--all> [--config p] [--stdout] scan bp: directives → data
 blueprint diff <a> <b> [--out f]                   diff two blueprint files
 blueprint diff --ref <gitref> --pack <name>        diff a pack across a ref
@@ -91,7 +92,8 @@ A **pack** is a named scope the tool can map. Declare packs in
 ```
 
 `files` supports `*` and `**` globs. `scene` holds the hand-written narrative
-that scanned data can't know. Then:
+that scanned data can't know. Discover configured packs with
+`blueprint packs`. Then:
 
 ```bash
 blueprint map envelope        # writes blueprints/envelope.blueprint.js
@@ -143,10 +145,12 @@ hand. Copy `blueprints/_template.blueprint.js` to start.
 6. **Choose ONE flow loop.** The `flow` array is the single story you would
    trace for a newcomer, in order; the renderer loops it. Side connections
    stay plain edges.
-7. **Hand-lay the grid.** Set `pos` per node like composing a drawing:
-   related things near each other, the loop readable left-to-right, plans
-   inside a dashed `region`. Conventions: **tall = measuring**, `slab` =
-   pass-through, `stack` = layered. There is no auto-layout on purpose.
+7. **Lay the grid.** For hand-authored scenes, set `pos` like composing a
+   drawing: related things near each other, the loop readable left-to-right,
+   plans inside a dashed `region`. For directive-based packs, let the CLI
+   auto-layout first and override only the nodes that need composition with
+   `pos:`. Conventions: **tall = measuring**, `slab` = pass-through, `stack` =
+   layered.
 8. **Write the panels.** Per node: `summary` (one honest line for hover),
    `does` (plain language), `built` (files, functions, wiring), and
    `condition` when something is currently wrong. Use `==chips==` for

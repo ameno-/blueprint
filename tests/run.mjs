@@ -67,6 +67,20 @@ ok("scanner flags PascalCase functions as components, no-entity as module", () =
   assert.equal(nodes[1]._src.kind, "module");
 });
 
+ok("entity binding ignores declarations inside docs and supports inline block directives", () => {
+  const src = [
+    "/** bp:node DOC group:g",
+    " * class FakeFromDocs {}",
+    " */",
+    "const text = 'function FakeFromString() {}';",
+    "/* bp:node INLINE group:g */ function realInline() {}",
+  ].join("\n");
+  const { nodes } = scanSource("module.ts", src);
+  assert.equal(nodes[0]._src.kind, "module");
+  assert.equal(nodes[1]._src.kind, "function");
+  assert.equal(nodes[1]._src.symbol, "realInline");
+});
+
 ok("scanner reports bad directives", () => {
   const { errors, warnings } = scanSource("x.ts", "// bp:edge A B\n// bp:does orphan text\n");
   assert.equal(errors.length, 1);
