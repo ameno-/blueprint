@@ -8,7 +8,9 @@
     "blueprint": "./cli.mjs"
   },
   "scripts": {
+    "test": "node tests/run.mjs",
     "demo": "node cli.mjs demo --no-browser",
-    "check": "node cli.mjs check blueprints/*.blueprint.js"
+    "check": "node cli.mjs check blueprints/*.blueprint.js",
+    "map": "node cli.mjs map cli"
   }
 }

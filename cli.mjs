@@ -1,21 +1,31 @@
 #!/usr/bin/env node
 /* blueprint — CLI for parchment isometric work-maps.
  * Zero dependencies. Commands:
- *   blueprint check <file...>            validate blueprint data files
+ *   blueprint check <file...>                      validate blueprint data files
  *   blueprint open <file...> [--port N] [--no-browser]
- *   blueprint init <name> [--dir .]      scaffold a new blueprint from the template
- *   blueprint demo [--port N]            serve the bundled acidbath example
+ *   blueprint init <name> [--dir .]                scaffold a new blueprint from the template
+ *   blueprint demo [--port N]                      serve the bundled acidbath example
+ *   blueprint map <pack|--all> [--config path] [--stdout] [--out dir]
+ *                                                  scan bp: directives in a pack's files -> blueprint data
+ *   blueprint diff <a.blueprint.js> <b.blueprint.js> [--out file] [--no-browser]
+ *   blueprint diff --ref <gitref> --pack <name> [--config path] [--out file] [--no-browser]
+ *                                                  before = pack scanned at <gitref>, after = worktree
  */
 import http from "node:http";
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import os from "node:os";
+import { readFile, writeFile, mkdir, readdir } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
+import { validateScene } from "./src/validate.mjs";
+import { scanSource, assembleScene } from "./src/scan.mjs";
+import { autoLayout } from "./src/layout.mjs";
+import { diffScenes } from "./src/diff.mjs";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
-const VALID_STATUS = new Set(["built", "in-progress", "planned", "broken"]);
 
-// ── loading ──────────────────────────────────────────────────────────────
+// ── loading / serializing blueprint data ─────────────────────────────────
 
 async function loadBlueprints(file) {
   const src = await readFile(file, "utf8");
@@ -31,82 +41,12 @@ async function loadBlueprints(file) {
   return registry;
 }
 
-// ── validation ───────────────────────────────────────────────────────────
-
-function validateScene(sc, where, errors, warnings, seen) {
-  const nodes = sc.nodes || [];
-  const edges = sc.edges || [];
-  const flow = sc.flow || [];
-  const ids = new Set();
-
-  for (const n of nodes) {
-    const at = `${where} [${n.id || "?"}]`;
-    if (!n.id) { errors.push(`${where}: a node is missing its id`); continue; }
-    if (ids.has(n.id)) errors.push(`${at}: duplicate node id`);
-    ids.add(n.id);
-    if (!n.label) warnings.push(`${at}: no label`);
-    if (!Array.isArray(n.pos) || n.pos.length !== 2 || n.pos.some((v) => typeof v !== "number")) {
-      errors.push(`${at}: pos must be [x, y] numbers`);
-    }
-    if (n.size && (!Array.isArray(n.size) || n.size.length !== 2 || n.size.some((v) => typeof v !== "number" || v <= 0))) {
-      errors.push(`${at}: size must be [w, d] positive numbers`);
-    }
-    if (n.status && !VALID_STATUS.has(n.status)) {
-      errors.push(`${at}: unknown status "${n.status}" (built|in-progress|planned|broken)`);
-    }
-    if (n.shape && !["box", "slab", "stack"].includes(n.shape)) {
-      errors.push(`${at}: unknown shape "${n.shape}" (box|slab|stack)`);
-    }
-    if (!n.summary && !n.does) warnings.push(`${at}: no summary/does prose`);
-    if (n.status === "broken" && !n.condition) warnings.push(`${at}: broken but no condition note`);
-  }
-
-  if (sc.groups) {
-    const gids = new Set(sc.groups.map((g) => g.id));
-    for (const n of nodes) {
-      if (n.group && !gids.has(n.group)) errors.push(`${where} [${n.id}]: group "${n.group}" is not declared`);
-    }
-    for (const g of sc.groups) {
-      if (!nodes.some((n) => (n.group || "misc") === g.id)) warnings.push(`${where}: group "${g.id}" has no members`);
-    }
-  }
-
-  for (const e of edges) {
-    if (!ids.has(e.from)) errors.push(`${where}: edge from unknown node "${e.from}"`);
-    if (!ids.has(e.to)) errors.push(`${where}: edge to unknown node "${e.to}"`);
-    if (e.status && !VALID_STATUS.has(e.status)) errors.push(`${where}: edge ${e.from}→${e.to} unknown status "${e.status}"`);
-  }
-  for (const f of flow) {
-    if (!ids.has(f)) errors.push(`${where}: flow references unknown node "${f}"`);
-  }
-  if (flow.length === 1) warnings.push(`${where}: flow has a single node — nothing to trace`);
-
-  for (const n of nodes) {
-    if (n.id && !edges.some((e) => e.from === n.id || e.to === n.id)) {
-      warnings.push(`${where} [${n.id}]: isolated — no wires in or out`);
-    }
-  }
-
-  for (let i = 0; i < nodes.length; i++) {
-    for (let j = i + 1; j < nodes.length; j++) {
-      const a = nodes[i], b = nodes[j];
-      if (!a.pos || !b.pos) continue;
-      const as = a.size || [1.6, 1.6], bs = b.size || [1.6, 1.6];
-      const overlap =
-        a.pos[0] < b.pos[0] + bs[0] && b.pos[0] < a.pos[0] + as[0] &&
-        a.pos[1] < b.pos[1] + bs[1] && b.pos[1] < a.pos[1] + as[1];
-      if (overlap) warnings.push(`${where}: [${a.id}] and [${b.id}] footprints overlap`);
-    }
-  }
-
-  for (const n of nodes) {
-    if (n.steps) {
-      const key = `${where}›${n.id}`;
-      if (seen.has(key)) { errors.push(`${key}: cyclic steps`); continue; }
-      validateScene(n.steps, key, errors, warnings, new Set([...seen, key]));
-    }
-  }
+function serializeScene(name, scene, banner) {
+  const head = banner || `/* ${name} — blueprint data. See README.md for the schema. */`;
+  return `${head}\nwindow.BLUEPRINTS = Object.assign(window.BLUEPRINTS || {}, {\n  ${JSON.stringify(name)}: ${JSON.stringify(scene, null, 2)},\n});\n`;
 }
+
+// ── check ────────────────────────────────────────────────────────────────
 
 async function check(files) {
   let failed = false;
@@ -121,7 +61,7 @@ async function check(files) {
     }
     for (const [name, bp] of Object.entries(registry)) {
       const errors = [], warnings = [];
-      validateScene(bp, name, errors, warnings, new Set());
+      validateScene(bp, name, errors, warnings);
       if (!bp.title) warnings.push(`${name}: no title`);
       for (const w of warnings) console.log(`  ⚠ ${w}`);
       for (const e of errors) console.log(`  ✗ ${e}`);
@@ -133,7 +73,7 @@ async function check(files) {
   process.exit(failed ? 1 : 0);
 }
 
-// ── serving ──────────────────────────────────────────────────────────────
+// ── serve / open ─────────────────────────────────────────────────────────
 
 function page(scriptTags) {
   return `<!doctype html>
@@ -218,18 +158,168 @@ async function init(name, dir) {
   const out = path.join(outDir, `${name}.blueprint.js`);
   await writeFile(out, tpl.replace(/mysystem/g, name.replace(/-/g, "_")));
   console.log(`wrote ${out}`);
-  console.log("next: edit the data, then `blueprint open " + out + "`");
+  console.log(`next: edit the data, then \`blueprint open ${out}\``);
 }
 
-// ── arg parsing ──────────────────────────────────────────────────────────
+// ── packs / map ──────────────────────────────────────────────────────────
+
+async function loadConfig(configPath) {
+  const file = configPath || path.join(process.cwd(), "blueprint.json");
+  try {
+    return { file, config: JSON.parse(await readFile(file, "utf8")) };
+  } catch (err) {
+    throw new Error(`cannot read pack config ${file} — ${err.message}`);
+  }
+}
+
+// micro-glob: supports * (within a segment) and ** (any depth)
+async function resolveGlob(pattern, cwd) {
+  if (!pattern.includes("*")) return [pattern];
+  const base = pattern.split("*")[0].replace(/[/][^/]*$/, "") || ".";
+  const re = new RegExp(
+    "^" + pattern.split(/(\*\*|\*)/).map((p) =>
+      p === "**" ? ".*" : p === "*" ? "[^/]*" : p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    ).join("") + "$"
+  );
+  const out = [];
+  async function walk(dir) {
+    let entries;
+    try { entries = await readdir(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const rel = path.relative(cwd, path.join(dir, e.name));
+      if (e.isDirectory()) {
+        if (e.name !== "node_modules" && !e.name.startsWith(".")) await walk(path.join(dir, e.name));
+      } else if (re.test(rel)) out.push(rel);
+    }
+  }
+  await walk(path.resolve(cwd, base));
+  return out.sort();
+}
+
+async function packFiles(pack, cwd) {
+  const files = [];
+  for (const pattern of pack.files || []) {
+    files.push(...await resolveGlob(pattern, cwd));
+  }
+  return [...new Set(files)];
+}
+
+async function scanPack(pack, cwd, readText) {
+  const files = await packFiles(pack, cwd);
+  if (!files.length) throw new Error(`pack matched no files: ${(pack.files || []).join(", ")}`);
+  const read = readText || ((f) => readFile(path.join(cwd, f), "utf8"));
+  const parts = [];
+  for (const f of files) {
+    let text;
+    try { text = await read(f); } catch { continue; } // file absent in this ref — contributes nothing
+    parts.push(scanSource(f, text));
+  }
+  return { files, ...assembleScene(parts, pack.scene || {}) };
+}
+
+const GEN_BANNER = "/* GENERATED by `blueprint map` from bp: directives in source.\n * Edit the directives, not this file. Regenerate with: blueprint map <pack> */";
+
+async function mapCmd(packNames, opts) {
+  const { file, config } = await loadConfig(opts.config);
+  const cwd = path.dirname(file);
+  const names = opts.all ? Object.keys(config.packs || {}) : packNames;
+  if (!names.length) throw new Error("no packs declared in " + file);
+  for (const name of names) {
+    const pack = (config.packs || {})[name];
+    if (!pack) throw new Error(`unknown pack "${name}" in ${file}`);
+    const { scene, errors, warnings, files } = await scanPack(pack, cwd);
+    autoLayout(scene.nodes, scene.edges);
+    for (const w of warnings) console.log(`  ⚠ ${w}`);
+    if (errors.length) {
+      for (const e of errors) console.error(`  ✗ ${e}`);
+      throw new Error(`pack "${name}" has ${errors.length} scan errors`);
+    }
+    const verrors = [], vwarnings = [];
+    validateScene(scene, name, verrors, vwarnings);
+    if (verrors.length) {
+      for (const e of verrors) console.error(`  ✗ ${e}`);
+      throw new Error(`pack "${name}" produced an invalid scene`);
+    }
+    for (const w of vwarnings) console.log(`  ⚠ ${w}`);
+    const text = serializeScene(name, scene, GEN_BANNER);
+    if (opts.stdout) {
+      process.stdout.write(text);
+    } else {
+      const outDir = opts.out || path.join(cwd, "blueprints");
+      await mkdir(outDir, { recursive: true });
+      const out = path.join(outDir, `${name}.blueprint.js`);
+      await writeFile(out, text);
+      console.log(`✓ ${name}: ${scene.nodes.length} structures, ${scene.edges.length} wires from ${files.length} files → ${out}`);
+    }
+  }
+}
+
+// ── diff ─────────────────────────────────────────────────────────────────
+
+function gitReader(ref, repoRoot) {
+  return async (relPath) => {
+    try {
+      return execFileSync("git", ["show", `${ref}:${relPath}`], { cwd: repoRoot, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    } catch {
+      throw Object.assign(new Error("absent"), { code: "ENOENT" });
+    }
+  };
+}
+
+async function diffCmd(args, opts) {
+  let before, after, name;
+
+  if (opts.ref) {
+    const { file, config } = await loadConfig(opts.config);
+    const cwd = path.dirname(file);
+    const pack = (config.packs || {})[opts.pack];
+    if (!opts.pack || !pack) throw new Error(`diff --ref needs --pack <name> (packs in ${file}: ${Object.keys(config.packs || {}).join(", ") || "none"})`);
+    const repoRoot = execFileSync("git", ["rev-parse", "--show-toplevel"], { cwd, encoding: "utf8" }).trim();
+    const readAtRef = gitReader(opts.ref, repoRoot);
+    const beforeScan = await scanPack(pack, repoRoot, async (f) => readAtRef(f)).catch(() => ({ scene: { nodes: [], edges: [] } }));
+    const afterScan = await scanPack(pack, repoRoot);
+    before = beforeScan.scene; after = afterScan.scene; name = opts.pack;
+    if (!before.nodes.length && !after.nodes.length) throw new Error(`pack "${opts.pack}" has no directives at ${opts.ref} or in the worktree`);
+  } else {
+    if (args.length < 2) throw new Error("diff needs two blueprint files (or --ref <gitref> --pack <name>)");
+    const a = await loadBlueprints(args[0]);
+    const b = await loadBlueprints(args[1]);
+    name = Object.keys(b)[0];
+    before = a[Object.keys(a)[0]];
+    after = b[name];
+  }
+
+  autoLayout(before.nodes, before.edges);
+  autoLayout(after.nodes, after.edges);
+  const scene = diffScenes(before, after);
+  const text = serializeScene(`${name}.diff`, scene, "/* GENERATED by `blueprint diff`. */");
+
+  if (opts.out) {
+    await writeFile(opts.out, text);
+    console.log(`✓ diff written to ${opts.out}`);
+    return;
+  }
+  const tmp = path.join(os.tmpdir(), `blueprint-diff-${Date.now()}.blueprint.js`);
+  await writeFile(tmp, text);
+  console.log(`diff: ${scene.tagline}`);
+  await openCmd([tmp], opts);
+}
+
+// ── args / dispatch ──────────────────────────────────────────────────────
 
 function parseArgs(argv) {
-  const args = [], opts = { port: 4319, noBrowser: false, dir: "." };
+  const args = [], opts = { port: 4319, noBrowser: false, dir: ".", config: null, out: null, stdout: false, ref: null, pack: null, all: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--port") opts.port = Number(argv[++i]);
     else if (a === "--no-browser") opts.noBrowser = true;
     else if (a === "--dir") opts.dir = argv[++i];
+    else if (a === "--config") opts.config = argv[++i];
+    else if (a === "--out") opts.out = argv[++i];
+    else if (a === "--stdout") opts.stdout = true;
+    else if (a === "--ref") opts.ref = argv[++i];
+    else if (a === "--pack") opts.pack = argv[++i];
+    else if (a === "--all") opts.all = true;
     else args.push(a);
   }
   return { args, opts };
@@ -237,10 +327,13 @@ function parseArgs(argv) {
 
 const HELP = `blueprint — parchment isometric work-maps
 
-  blueprint check <file...>                       validate blueprint data
-  blueprint open <file...> [--port N] [--no-browser]   serve + open in browser
-  blueprint init <name> [--dir .]                 scaffold from the template
-  blueprint demo [--port N]                       serve the acidbath example
+  blueprint check <file...>                          validate blueprint data
+  blueprint open <file...> [--port N] [--no-browser] serve + open in browser
+  blueprint init <name> [--dir .]                    scaffold from the template
+  blueprint demo [--port N]                          serve the acidbath example
+  blueprint map <pack|--all> [--config p] [--stdout] scan bp: directives -> data
+  blueprint diff <a> <b> [--out f]                   diff two blueprint files
+  blueprint diff --ref <gitref> --pack <name>        diff a pack across a ref
 `;
 
 async function main() {
@@ -250,8 +343,33 @@ async function main() {
   if (cmd === "open" && args.length) return openCmd(args, opts);
   if (cmd === "init" && args.length) return init(args[0], opts.dir);
   if (cmd === "demo") return openCmd([path.join(ROOT, "blueprints", "acidbath.blueprint.js")], opts);
+  if (cmd === "map" && (args.length || opts.all)) return mapCmd(args, opts);
+  if (cmd === "diff") return diffCmd(args, opts);
   process.stdout.write(HELP);
   process.exit(cmd === "help" || cmd === "--help" || !cmd ? 0 : 1);
 }
 
 main().catch((err) => { console.error("✗ " + err.message); process.exit(1); });
+
+/* ── blueprint directives ─────────────────────────────────────────────────
+ * bp:group the-cli The CLI
+ * bp:group engines Engines
+ * bp:group the-viewer The viewer
+ * bp:group guards Guards
+ * bp:group plans The plans
+ * bp:node CLI "command dispatch" group:the-cli
+ * bp:does Parses argv and dispatches: ==check==, ==open==, ==init==, ==demo==, ==map==, ==diff==.
+ * bp:built cli.mjs — zero-dep node ESM entry; serves the viewer over http.
+ * bp:flow CLI SCAN LAY
+ * bp:edge CLI -> SCAN : map · diff --ref
+ * bp:edge CLI -> VAL : check
+ * bp:edge CLI -> DIFF : file / ref diff
+ * bp:edge CLI -> REND : serves the viewer
+ * bp:node WATCH "watch mode" group:plans status:planned pos:-4.5,1.5
+ * bp:does Re-map packs when sources change; keep the picture live during a session.
+ * bp:condition Not started; needs a debounce and a served-page reload channel.
+ * bp:edge WATCH -> CLI : re-runs map status:planned
+ * bp:node PNG "snapshot export" group:plans status:planned pos:5,6.5
+ * bp:does Export the scene as SVG/PNG for Linear comments and docs.
+ * bp:edge REND -> PNG : export status:planned
+ */

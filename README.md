@@ -22,10 +22,13 @@ npm i -g git+https://github.com/ameno-/blueprint.git   # or: npm link  from a cl
 ```
 
 ```
-blueprint check <file...>                        validate blueprint data
+blueprint check <file...>                          validate blueprint data
 blueprint open <file...> [--port N] [--no-browser]   serve + open in browser
-blueprint init <name> [--dir .]                  scaffold from the template
-blueprint demo                                   serve the acidbath example
+blueprint init <name> [--dir .]                    scaffold from the template
+blueprint demo                                     serve the acidbath example
+blueprint map <pack|--all> [--config p] [--stdout] scan bp: directives → data
+blueprint diff <a> <b> [--out f]                   diff two blueprint files
+blueprint diff --ref <gitref> --pack <name>        diff a pack across a ref
 ```
 
 `check` fails CI-style (exit 1) on unknown edge/flow references, duplicate
@@ -33,6 +36,84 @@ ids, undeclared groups, bad statuses, and malformed geometry; it warns on
 isolated nodes, footprint overlaps, missing prose, and `broken` nodes with no
 `condition`. `open` serves any blueprint file from anywhere — no copying into
 the viewer directory. Deep links: `?b=<name>&select=<NODEID>`.
+
+---
+
+## Small blueprints: functions, classes, modules, components
+
+Hand-authoring is for systems. For code-level scenes — the functions of a
+module, the components of a view — put **directives in source comments** and
+let the CLI derive the picture:
+
+```ts
+/**
+ * bp:node VAL "validate envelope" group:intake status:built
+ * bp:does Rejects malformed envelopes before any spawn happens.
+ * bp:condition Does not check signature expiry yet.
+ */
+export function validateEnvelope(env) { … }
+
+// bp:node SPAWN "spawn worker" group:intake status:planned shape:box
+// bp:edge VAL -> SPAWN : validated env
+// bp:flow VAL SPAWN
+export class Spawner { … }
+```
+
+Directives (only ever read from comments — strings and template literals are
+ignored):
+
+| directive | meaning |
+|---|---|
+| `bp:node <ID> ["label"] [group:g] [status:s] [shape:box\|slab\|stack] [pos:x,y] [height:n] [count:n]` | declare a structure; binds to the entity (class/function/const/type) declared within ~8 lines below, else the file itself as a module |
+| `bp:summary` / `bp:does` / `bp:built` / `bp:condition` `<text>` | panel prose; attaches to the previous `bp:node`; repeatable |
+| `bp:edge <FROM> -> <TO> [: label] [status:s]` | wire between ids |
+| `bp:flow <ID> [<ID> …]` | the trace loop; derived from the wires if omitted |
+| `bp:group <id> <title…>` | legend section |
+
+Entity kinds pick default shapes: `class`/`component` → box, `function`/`type`
+→ slab, `module` → stack. PascalCase functions count as components.
+Provenance (`file:line — kind symbol`) is appended to `built` automatically.
+
+### Packs
+
+A **pack** is a named scope the tool can map. Declare packs in
+`blueprint.json` at the repo root:
+
+```json
+{
+  "packs": {
+    "envelope": {
+      "files": ["adw/envelope.ts", "adw/delegate.ts"],
+      "scene": { "title": "ENVELOPE", "description": "…", "legendTitle": "the lane" }
+    }
+  }
+}
+```
+
+`files` supports `*` and `**` globs. `scene` holds the hand-written narrative
+that scanned data can't know. Then:
+
+```bash
+blueprint map envelope        # writes blueprints/envelope.blueprint.js
+blueprint map --all
+```
+
+Generated files are artifacts — edit the directives, never the output.
+Positions are auto-laid (longest-path ranks) unless a directive sets `pos:`.
+
+### blueprint diff — before/after for review
+
+```bash
+blueprint diff old.blueprint.js new.blueprint.js     # two data files
+blueprint diff --ref main --pack envelope            # pack at ref vs worktree
+blueprint diff --ref HEAD~3 --pack envelope --out review/diff.blueprint.js
+```
+
+Diff renders a merged scene with its own vocabulary: **`+` badge = added**,
+**hollow diamond = changed** (with a per-field change list in the panel),
+**ghost = removed**. The header gains a **changed only** filter (key: `c`) that
+hides untouched structures and their wires — that's how big PRs stay
+reviewable: one pack at a time, filtered to the delta.
 
 ---
 
@@ -185,9 +266,16 @@ paragraphs.
 index.html                        shell (script-tag loading, ?b=name picker)
 blueprint.css                     parchment theme
 blueprint.js                      renderer + interactions (no dependencies)
-cli.mjs                           blueprint check / open / init / demo
+cli.mjs                           blueprint check / open / init / demo / map / diff
+src/scan.mjs                      bp: directive scanner (comment-lexed)
+src/layout.mjs                    layered auto-layout
+src/diff.mjs                      scene diff → delta vocabulary
+src/validate.mjs                  schema validation
+blueprint.json                    pack declarations (dogfood: the cli maps itself)
+tests/run.mjs                     engine tests (npm test)
 blueprints/
   acidbath.blueprint.js           worked example: a real package's work + plans
+  cli.blueprint.js                generated: this tool drawn from its own directives
   _template.blueprint.js          starting point for your own
 ```
 

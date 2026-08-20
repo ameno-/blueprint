@@ -52,7 +52,13 @@
     const rich = esc
       .replace(/==([^=]+)==/g, '<span class="bp-chip">$1</span>')
       .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-    return rich.split(/\n\s*\n/).map((p) => "<p>" + p.replace(/\n/g, " ") + "</p>").join("");
+    return rich.split(/\n\s*\n/).map((p) => {
+      if (/^- /m.test(p)) {
+        const items = p.split(/\n/).filter((l) => l.startsWith("- ")).map((l) => "<li>" + l.slice(2) + "</li>").join("");
+        return '<ul class="bp-list">' + items + "</ul>";
+      }
+      return "<p>" + p.replace(/\n/g, " ") + "</p>";
+    }).join("");
   }
 
   function normalizeNode(n) {
@@ -210,6 +216,8 @@
 
     function drawNode(n) {
       const g = svg("g", { class: "bp-node", "data-id": n.id, "data-status": n.status }, nodeG);
+      if (n.delta) g.dataset.delta = n.delta;
+      if (n.delta === "removed") g.classList.add("ghost");
       const [x, y] = n.pos, [w, d] = n.size;
       if (n.shape === "stack") {
         const plates = Math.min(n.plates || 4, 6);
@@ -219,6 +227,18 @@
         }
       } else {
         drawBox(g, n, x, y, w, d, nodeHeight(n), 0, true);
+      }
+      // diff vocabulary: + added, hollow diamond changed
+      if (n.delta === "added" || n.delta === "changed") {
+        const m = iso(x + w / 2, y + d / 2, nodeHeight(n));
+        const bx = m[0] + w * TW * 0.28, by = m[1] - 6;
+        if (n.delta === "added") {
+          svg("line", { x1: bx - 5, y1: by, x2: bx + 5, y2: by, stroke: "#1d1a10", "stroke-width": 2.4 }, g);
+          svg("line", { x1: bx, y1: by - 5, x2: bx, y2: by + 5, stroke: "#1d1a10", "stroke-width": 2.4 }, g);
+        } else {
+          const s = 5.5;
+          svg("polygon", { points: pts([[bx, by - s], [bx + s, by], [bx, by + s], [bx - s, by]]), fill: "#d6cdae", stroke: "#1d1a10", "stroke-width": 1.6 }, g);
+        }
       }
       if (state.selected === n.id) {
         g.classList.add("sel");
@@ -287,11 +307,13 @@
 
       // edges
       sc._edgePaths = {};
+      const deltaOf = (id) => sc._nodes[id] && sc._nodes[id].delta;
       sc._edges.forEach((e) => {
         const p = edgePolyline(e);
         if (!p) return;
-        const g = svg("g", {}, edgeG);
-        svg("polyline", { points: pts(p), class: "bp-wire", "data-status": e.status }, g);
+        const g = svg("g", { class: "bp-wirewrap" }, edgeG);
+        if (sc._hasDelta && (e.delta || deltaOf(e.from) || deltaOf(e.to))) g.dataset.ctx = "1";
+        svg("polyline", { points: pts(p), class: "bp-wire", "data-status": e.status, "data-delta": e.delta || null }, g);
         svg("circle", { cx: p[0][0], cy: p[0][1], r: 2.6, fill: "#2b2517" }, g);
         if (e.status === "broken") {
           const m = p[1];
@@ -391,6 +413,15 @@
       }
 
       const actions = html("div", "bp-head-actions", header);
+      if (sc._hasDelta) {
+        const filterBtn = html("button", "bp-btn" + (state.changedOnly ? " active" : ""), actions,
+          state.changedOnly ? "show all" : "changed only");
+        filterBtn.onclick = () => {
+          state.changedOnly = !state.changedOnly;
+          root.classList.toggle("bp-changed-only", state.changedOnly);
+          renderHeader();
+        };
+      }
       const flowBtn = html("button", "bp-btn" + (state.trace.mode === "run" ? " active" : ""), actions,
         state.trace.mode === "run" ? "❚❚ pause the flow" : "▶ resume the flow");
       flowBtn.onclick = toggleFlow;
@@ -415,6 +446,7 @@
           const row = html("div", "bp-leg-row", legend);
           row.dataset.status = n.status;
           row.dataset.id = n.id;
+          if (n.delta) row.dataset.delta = n.delta;
           if (state.selected === n.id) row.classList.add("sel");
           html("span", "key", row, n.id);
           html("span", "name", row, n.label);
@@ -480,6 +512,12 @@
           html("span", "tag", c, "condition");
           const cd = html("div", "", c);
           cd.innerHTML = mdLite(n.condition);
+        }
+        if (n.changes) {
+          const c = html("div", "bp-condition", body);
+          html("span", "tag", c, "diff — " + n.delta);
+          const cd = html("div", "", c);
+          cd.innerHTML = mdLite(n.changes.map((x) => "- " + x).join("\n"));
         }
       } else {
         html("div", "bp-sec", body, "how it's built");
@@ -749,6 +787,10 @@
         let i = order.indexOf(state.selected);
         i = i === -1 ? 0 : (i + (e.key === "ArrowDown" ? 1 : -1) + order.length) % order.length;
         select(order[i]);
+      } else if (e.key === "c" && sc._hasDelta) {
+        state.changedOnly = !state.changedOnly;
+        root.classList.toggle("bp-changed-only", state.changedOnly);
+        renderHeader();
       } else if (e.key === "ArrowRight" || e.key === "Enter") {
         const n = state.selected && nodeById(state.selected);
         if (n && n.steps) enterScene(n);
@@ -769,3 +811,8 @@
 
   window.Blueprint = { render };
 })();
+
+/* bp:node REND "viewer" group:the-viewer shape:box
+ * bp:does Renders scenes onto the parchment board: legend, tabs, trace, drill-down, ==delta vocabulary==, changed-only filter.
+ * bp:built blueprint.js + blueprint.css — dependency-free SVG, no build step.
+ */

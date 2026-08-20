@@ -315,6 +315,8 @@ html, body {
 
 .bp-panel p { line-height: 1.65; margin: 0 0 12px; }
 
+.bp-list { margin: 0 0 12px; padding-left: 18px; line-height: 1.7; font-size: 12px; }
+
 .bp-chip {
   background: var(--chip);
   color: var(--chip-text);
@@ -405,6 +407,19 @@ html, body {
 .bp-wire { fill: none; stroke: var(--ink); stroke-width: 1.2; }
 .bp-wire[data-status="planned"] { stroke-dasharray: 6 5; stroke-opacity: 0.6; }
 .bp-wire[data-status="broken"] { stroke-dasharray: 2.5 3; }
+.bp-wire[data-delta="removed"] { stroke-dasharray: 3 4; stroke-opacity: 0.35; }
+
+/* diff vocabulary */
+.bp-node.ghost { opacity: 0.35; }
+.bp-node[data-delta="removed"] .face { stroke-dasharray: 4 3; }
+.bp-leg-row[data-delta="added"] .name::after { content: " +"; font-weight: 700; }
+.bp-leg-row[data-delta="changed"] .name::after { content: " ~"; }
+.bp-leg-row[data-delta="removed"] { opacity: 0.55; }
+.bp-leg-row[data-delta="removed"] .name { text-decoration: line-through; }
+
+.bp-changed-only .bp-node:not([data-delta]),
+.bp-changed-only .bp-leg-row:not([data-delta]),
+.bp-changed-only .bp-wirewrap:not([data-ctx]) { display: none; }
 .bp-wire-label { fill: var(--ink-soft); }
 
 .bp-pulse-ring {
